@@ -485,10 +485,11 @@ async function handleReserve(ws, payload) {
         const launchOptions = {
           headless,
           executablePath: "/usr/bin/google-chrome-stable",
+          userDataDir,
           port: assignedPort,
           args: Array.isArray(customArgs)
-            ? [...customArgs, userDirArg]
-            : ["--disable-blink-features=AutomationControlled", userDirArg],
+            ? customArgs
+            : ["--disable-blink-features=AutomationControlled"],
           // Set DISPLAY environment variable for non-headless mode
           env: !headless ? { ...process.env, DISPLAY: `:${displayNum}` } : undefined
         };
