@@ -8,6 +8,7 @@ const { execSync } = require("child_process");
 const { redis, prefix, closeRedis } = require("./redis");
 const K_PORT_RELEASED_AT = prefix("port-released");
 const { promisify } = require('util');
+const { v4: uuidv4 } = require('uuid');
 
 // ------- env -------
 const MIN_PORT = 40000;
