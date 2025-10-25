@@ -43,6 +43,7 @@ const local = new Map();
 // Simple touch throttle
 const lastTouch = new Map();
 const TOUCH_MIN_MS = Number(process.env.TOUCH_MIN_MS || 3000);
+const PROFILE_ROOT = path.resolve(__dirname, 'profiles');
 
 const LOG = (...a) => console.log(...a);
 const now = () => Date.now();
@@ -62,6 +63,12 @@ async function isDisplayRunning(displayNum) {
   } catch {
     return false;
   }
+}
+
+async function createProfileDir(sessionId) {
+  const dir = path.join(PROFILE_ROOT, sessionId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
 }
 
 // Ensure Xvfb display exists, start if needed
