@@ -1,7 +1,8 @@
 // server.js — Redis-backed broker (multi-worker safe)
 require("dotenv").config({ path: "./config.env" });
-// const playwright = require("playwright");
-const { chromium } = require('playwright-extra')
+const playwright = require("playwright");
+const chromium = playwright.chromium;
+// const { chromium } = require('playwright-extra')
 const { createServer } = require("http");
 const WebSocket = require("ws");
 const { execSync } = require("child_process");
