@@ -12,6 +12,7 @@
     "axios": "^1.12.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "fs": "^0.0.1-security",
     "helmet": "^7.1.0",
     "ioredis": "^5.7.0",
     "node-fetch": "^3.3.2",

@@ -10,6 +10,7 @@ const K_PORT_RELEASED_AT = prefix("port-released");
 const { promisify } = require('util');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const fs = require('fs').promises;
 
 // ------- env -------
 const MIN_PORT = 40000;
