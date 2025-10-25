@@ -6,6 +6,10 @@ const { createServer } = require("http");
 const WebSocket = require("ws");
 const { execSync } = require("child_process");
 const { redis, prefix, closeRedis } = require("./redis");
+
+const stealth = require('puppeteer-extra-plugin-stealth')()
+chromium.use(stealth);
+
 const K_PORT_RELEASED_AT = prefix("port-released");
 const {promisify} = require('util');
 
