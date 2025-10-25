@@ -7,7 +7,7 @@ const WebSocket = require("ws");
 const { execSync } = require("child_process");
 const { redis, prefix, closeRedis } = require("./redis");
 const K_PORT_RELEASED_AT = prefix("port-released");
-const {promisify} = require('util');
+const { promisify } = require('util');
 
 // ------- env -------
 const MIN_PORT = 40000;
@@ -80,7 +80,7 @@ async function ensureDisplay(displayNum) {
   // Start new display
   try {
     LOG(`[Xvfb] Starting display :${displayNum}...`);
-    
+
     // Spawn Xvfb in background with high client limit
     // Each Chrome creates 10-30+ connections, so set very high limit
     const xvfbProcess = exec(
@@ -232,7 +232,7 @@ async function touch(id) {
       info.lastActiveAt = t;
       await redis.set(K_INFO(id), JSON.stringify(info), "PX", IDLE_TIMEOUT_MS);
     }
-  } catch {}
+  } catch { }
 }
 
 async function decCountSafe() {
@@ -311,7 +311,7 @@ setInterval(async () => {
             if (localEntry.port) {
               await releasePort(localEntry.port);
             }
-          } catch {}
+          } catch { }
           local.delete(id);
         }
         await redis.srem(K_SET, id);
@@ -330,7 +330,7 @@ setInterval(async () => {
         await closeById(id, "ttl");
       }
     }
-    
+
     // ADDED: Also clean up orphaned ports immediately
     const portsInRedis = await redis.smembers(K_PORTS);
     const activePorts = new Set();
@@ -341,7 +341,7 @@ setInterval(async () => {
         if (portMatch) activePorts.add(portMatch[1]);
       }
     }
-    
+
     const orphanedPorts = portsInRedis.filter(p => !activePorts.has(p));
     if (orphanedPorts.length > 0) {
       LOG(`[janitor] Found ${orphanedPorts.length} orphaned ports, releasing...`);
@@ -361,7 +361,7 @@ setInterval(async () => {
   try {
     const MAX_BROWSER_AGE_MS = BROWSER_TTL_MS * 2; // 2x TTL = definitely a zombie
     const currentIds = await redis.smembers(K_SET);
-    
+
     // Get all tracked profile IDs from Redis
     const trackedProfiles = new Set();
     for (const id of currentIds) {
@@ -372,43 +372,43 @@ setInterval(async () => {
         if (match) trackedProfiles.add(match[1]);
       }
     }
-    
+
     // List all Chrome processes with their start times
     const { stdout } = await execAsync(
       'ps -eo pid,etimes,command | grep "playwright_chromiumdev_profile" | grep -v grep'
     );
-    
+
     const lines = stdout.trim().split('\n').filter(l => l);
     let killedCount = 0;
-    
+
     for (const line of lines) {
       const parts = line.trim().split(/\s+/);
       const pid = parts[0];
       const elapsedSeconds = parseInt(parts[1]);
       const command = parts.slice(2).join(' ');
-      
+
       // Extract profile ID
       const profileMatch = command.match(/playwright_chromiumdev_profile-(\w+)/);
       if (!profileMatch) continue;
-      
+
       const profileId = profileMatch[1];
       const ageMs = elapsedSeconds * 1000;
-      
+
       // Kill if: old AND not tracked in Redis
       if (ageMs > MAX_BROWSER_AGE_MS && !trackedProfiles.has(profileId)) {
         try {
           await execAsync(`kill -9 ${pid}`);
           killedCount++;
-          LOG(`[zombie-killer] Killed zombie Chrome PID ${pid}, age ${Math.floor(ageMs/1000)}s, profile ${profileId}`);
+          LOG(`[zombie-killer] Killed zombie Chrome PID ${pid}, age ${Math.floor(ageMs / 1000)}s, profile ${profileId}`);
         } catch (e) {
           // Already dead, ignore
         }
       }
     }
-    
+
     if (killedCount > 0) {
       LOG(`[zombie-killer] Cleaned up ${killedCount} zombie Chrome processes`);
-      
+
       // Also clean up temp directories
       try {
         await execAsync('find /tmp -name "playwright_chromiumdev_profile-*" -type d -mmin +5 -exec rm -rf {} + 2>/dev/null');
@@ -461,19 +461,24 @@ async function handleReserve(ws, payload) {
         // Assign unique DISPLAY for non-headless browsers
         // Use claimed count to cycle through displays 1-99
         const displayNum = !headless ? ((claimed % 99) + 1) : null;
-        
+
         // Ensure Xvfb display is running for non-headless browsers
         if (!headless && displayNum) {
           await ensureDisplay(displayNum);
         }
-        
+
+        const sessionId = `sess-${uuidv4()}`;
+        const userDataDir = await createProfileDir(sessionId);
+
+        const userDirArg = `--user-data-dir=${userDataDir}`
+
         const launchOptions = {
           headless,
           executablePath: "/usr/bin/google-chrome-stable",
           port: assignedPort,
           args: Array.isArray(customArgs)
-            ? customArgs
-            : ["--disable-blink-features=AutomationControlled"],
+            ? [...customArgs, userDirArg]
+            : ["--disable-blink-features=AutomationControlled", userDirArg],
           // Set DISPLAY environment variable for non-headless mode
           env: !headless ? { ...process.env, DISPLAY: `:${displayNum}` } : undefined
         };
@@ -486,7 +491,7 @@ async function handleReserve(ws, payload) {
           console.log(`[INFO] Launching browser on port ${assignedPort}`);
         }
         console.log("Launch options:", JSON.stringify(launchOptions, null, 2));
-        
+
         server = await chromium.launchServer(launchOptions);
         const wsEndpoint = server.wsEndpoint();
 
@@ -580,7 +585,7 @@ async function handleReserve(ws, payload) {
         if (server) {
           try {
             await server.close();
-          } catch {}
+          } catch { }
           server = null;
         }
 
@@ -634,7 +639,7 @@ async function handleRelease(ws, payload) {
 async function forceReclaimPort(port) {
   try {
     console.log(`[RECLAIM] Attempting to reclaim port ${port}`);
-    
+
     // 1. Find what's using the port
     let pids = [];
     try {
@@ -645,7 +650,7 @@ async function forceReclaimPort(port) {
       console.log(`[RECLAIM] Port ${port} is already free`);
       return true;
     }
-    
+
     // 2. Kill all processes using this port
     for (const pid of pids) {
       try {
@@ -656,17 +661,17 @@ async function forceReclaimPort(port) {
         console.warn(`[RECLAIM] Could not kill PID ${pid}:`, e.message);
       }
     }
-    
+
     // 3. Double-check with fuser
     try {
       execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' });
     } catch (e) {
       // Expected if already killed
     }
-    
+
     // 4. Wait for OS to release the port
     await new Promise(r => setTimeout(r, 1000));
-    
+
     // 5. Verify port is now free
     try {
       execSync(`lsof -ti :${port}`, { encoding: 'utf8' });
@@ -783,14 +788,14 @@ httpServer.on("upgrade", (req, socket, head) => {
 // Add this HTTP endpoint for debugging
 httpServer.on('request', (req, res) => {
   const url = new URL(req.url, 'http://x');
-  
+
   if (url.pathname === '/debug/ports' || url.pathname === `${BASE_PATH}/debug/ports`) {
     (async () => {
       try {
         const ports = await redis.smembers(K_PORTS);
         const ids = await redis.smembers(K_SET);
         const count = await redis.get(K_COUNT);
-        
+
         // Get detailed info about each browser
         const browsers = [];
         for (const id of ids) {
@@ -807,11 +812,11 @@ httpServer.on('request', (req, res) => {
             });
           }
         }
-        
+
         // Check for orphaned ports
         const activePorts = new Set(browsers.map(b => b.port));
         const orphanedPorts = ports.filter(p => !activePorts.has(p));
-        
+
         const debugInfo = {
           timestamp: new Date().toISOString(),
           redis: {
@@ -832,7 +837,7 @@ httpServer.on('request', (req, res) => {
             orphanedCount: orphanedPorts.length
           }
         };
-        
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(debugInfo, null, 2));
       } catch (e) {
@@ -851,16 +856,16 @@ httpServer.on('request', (req, res) => {
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
     }
-    
+
     (async () => {
       try {
         console.log('[ADMIN] Manual cleanup triggered');
         await fullPortCleanup();
-        
+
         const ports = await redis.smembers(K_PORTS);
         const count = await redis.get(K_COUNT);
         const ids = await redis.smembers(K_SET);
-        
+
         // Check system ports
         let systemPorts = [];
         try {
@@ -874,7 +879,7 @@ httpServer.on('request', (req, res) => {
         } catch (e) {
           // No ports in use
         }
-        
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           ok: true,
@@ -897,14 +902,14 @@ httpServer.on('request', (req, res) => {
     })();
     return;
   }
-  
+
   // Health check endpoint
   if (url.pathname === '/health' || url.pathname === `${BASE_PATH}/health`) {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('OK');
     return;
   }
-  
+
   res.writeHead(404);
   res.end('Not Found');
 });
@@ -941,14 +946,14 @@ tunnelWss.on("connection", async (clientWs, req, id, requestedProtoRaw) => {
   console.log(`[DEBUG] Tunnel connection for browser ${id}`);
 
   let info = await loadInfo(id);
-  
+
   if (!info) {
     for (let i = 0; i < 5 && !info; i++) {
       await new Promise((r) => setTimeout(r, 100));
       info = await loadInfo(id);
     }
   }
-  
+
   if (!info) {
     console.log(`[WARN] Rejecting tunnel for unknown or closed browser ${id}`);
     clientWs.close(1011, "unknown_browser");
@@ -970,8 +975,8 @@ tunnelWss.on("connection", async (clientWs, req, id, requestedProtoRaw) => {
 
   const cleanup = (reason = "unknown") => {
     console.log(`[DEBUG] Cleaning up tunnel for ${id}, reason: ${reason}`);
-    try { clientWs.close(); } catch {}
-    try { upstream.close(); } catch {}
+    try { clientWs.close(); } catch { }
+    try { upstream.close(); } catch { }
   };
 
   const connectionTimeout = setTimeout(() => {
@@ -986,7 +991,7 @@ tunnelWss.on("connection", async (clientWs, req, id, requestedProtoRaw) => {
     connectionEstablished = true;
     clearTimeout(connectionTimeout);
 
-    const refresh = () => touch(id).catch(() => {});
+    const refresh = () => touch(id).catch(() => { });
 
     clientWs.on("message", (data) => {
       refresh();
@@ -999,8 +1004,8 @@ tunnelWss.on("connection", async (clientWs, req, id, requestedProtoRaw) => {
 
     upstream.on('message', (data) => {
       refresh();
-      try { 
-        clientWs.send(data); 
+      try {
+        clientWs.send(data);
       } catch (e) {
         console.error(`[ERROR] Failed to send to client:`, e.message);
       }
@@ -1059,7 +1064,7 @@ async function cleanupStalePorts() {
   try {
     const ports = await redis.smembers(K_PORTS);
     const ids = await redis.smembers(K_SET);
-    
+
     // Get all ports that should be in use
     const activePorts = new Set();
     for (const id of ids) {
@@ -1071,7 +1076,7 @@ async function cleanupStalePorts() {
         }
       }
     }
-    
+
     // Release any ports that aren't associated with active browsers
     for (const port of ports) {
       if (!activePorts.has(port)) {
@@ -1079,7 +1084,7 @@ async function cleanupStalePorts() {
         await releasePort(parseInt(port));
       }
     }
-    
+
     console.log(`[STARTUP] Port cleanup complete. Active: ${activePorts.size}, Released: ${ports.length - activePorts.size}`);
   } catch (e) {
     console.error('[STARTUP] Port cleanup failed:', e.message);
@@ -1098,7 +1103,7 @@ setInterval(async () => {
     const ports = await redis.smembers(K_PORTS);
     const info = await redis.info('clients');
     const connectedClients = info.match(/connected_clients:(\d+)/)?.[1] || '?';
-    
+
     console.log(`[health] Redis count: ${count}, Set size: ${ids.length}, Local map: ${local.size}, Ports used: ${ports.length}, Redis clients: ${connectedClients}`);
   } catch (e) {
     console.error('[health] check failed:', e.message);
@@ -1111,13 +1116,13 @@ const workerId = process.env.NODE_APP_INSTANCE || process.env.pm_id || '0';
 // Only worker 0 runs periodic cleanup
 if (workerId === '0') {
   console.log('[CLEANUP] This worker will handle periodic cleanup');
-  
+
   // Run full cleanup every 10 minutes (less aggressive) - INCREASED
   setInterval(async () => {
     console.log('[CLEANUP] Periodic full cleanup starting...');
     await fullPortCleanup();
   }, 600000); // 10 minutes
-  
+
   // Run zombie cleanup every 5 minutes - INCREASED
   setInterval(async () => {
     console.log('[CLEANUP] Periodic zombie cleanup starting...');
